@@ -12,7 +12,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-// Main Application
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -20,349 +19,230 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Student Management System',
+      title: 'Student Search',
       theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
-      home: const StudentPage(),
+      home: const StudentSearchPage(),
     );
   }
 }
 
-// Student Management Page
-class StudentPage extends StatefulWidget {
-  const StudentPage({super.key});
+class StudentSearchPage extends StatefulWidget {
+  const StudentSearchPage({super.key});
 
   @override
-  State<StudentPage> createState() => _StudentPageState();
+  State<StudentSearchPage> createState() => _StudentSearchPageState();
 }
 
-class _StudentPageState extends State<StudentPage> {
-  final nameController = TextEditingController();
-  final regController = TextEditingController();
-  final deptController = TextEditingController();
-  final emailController = TextEditingController();
+class _StudentSearchPageState extends State<StudentSearchPage> {
+  final TextEditingController searchController = TextEditingController();
 
-  final CollectionReference students = FirebaseFirestore.instance.collection(
-    'students',
-  );
+  List<Map<String, dynamic>> students = [];
 
-  // Add Student to Firestore
-  Future<void> addStudent() async {
-    if (nameController.text.trim().isEmpty ||
-        regController.text.trim().isEmpty ||
-        deptController.text.trim().isEmpty ||
-        emailController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+  bool isLoading = false;
+  bool searched = false;
+  String errorMessage = '';
+
+  Future<void> searchStudents() async {
+    String searchText = searchController.text.trim().toLowerCase();
+
+    if (searchText.isEmpty) {
+      setState(() {
+        students = [];
+        searched = false;
+        errorMessage = 'Please enter a name or register number.';
+      });
       return;
     }
 
+    setState(() {
+      isLoading = true;
+      searched = true;
+      errorMessage = '';
+      students = [];
+    });
+
     try {
-      await students.add({
-        'name': nameController.text.trim(),
-        'registerNumber': regController.text.trim(),
-        'department': deptController.text.trim(),
-        'email': emailController.text.trim(),
+      QuerySnapshot snapshot = await FirebaseFirestore.instance
+          .collection('students')
+          .get();
+
+      List<Map<String, dynamic>> results = [];
+
+      for (var doc in snapshot.docs) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+        String name = (data['name'] ?? '').toString().toLowerCase();
+
+        String registerNumber = (data['registerNumber'] ?? '')
+            .toString()
+            .toLowerCase();
+
+        if (name.contains(searchText) || registerNumber.contains(searchText)) {
+          results.add(data);
+        }
+      }
+
+      setState(() {
+        students = results;
+        isLoading = false;
       });
-
-      nameController.clear();
-      regController.clear();
-      deptController.clear();
-      emailController.clear();
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Student added successfully')),
-      );
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
+      setState(() {
+        isLoading = false;
+        errorMessage = 'Error retrieving data: $e';
+      });
     }
-  }
-
-  // Delete Student from Firestore
-  Future<void> deleteStudent(String id) async {
-    try {
-      await students.doc(id).delete();
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Student deleted successfully')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
-  }
-
-  // Edit Student Details
-  Future<void> editStudent(String id, Map<String, dynamic> data) async {
-    final editName = TextEditingController(text: data['name'] ?? '');
-    final editReg = TextEditingController(text: data['registerNumber'] ?? '');
-    final editDept = TextEditingController(text: data['department'] ?? '');
-    final editEmail = TextEditingController(text: data['email'] ?? '');
-
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Edit Student Details'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: editName,
-                  decoration: const InputDecoration(labelText: 'Student Name'),
-                ),
-                TextField(
-                  controller: editReg,
-                  decoration: const InputDecoration(
-                    labelText: 'Register Number',
-                  ),
-                ),
-                TextField(
-                  controller: editDept,
-                  decoration: const InputDecoration(labelText: 'Department'),
-                ),
-                TextField(
-                  controller: editEmail,
-                  decoration: const InputDecoration(labelText: 'Email Address'),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (editName.text.trim().isEmpty ||
-                    editReg.text.trim().isEmpty ||
-                    editDept.text.trim().isEmpty ||
-                    editEmail.text.trim().isEmpty) {
-                  return;
-                }
-
-                try {
-                  await students.doc(id).update({
-                    'name': editName.text.trim(),
-                    'registerNumber': editReg.text.trim(),
-                    'department': editDept.text.trim(),
-                    'email': editEmail.text.trim(),
-                  });
-
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext);
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(SnackBar(content: Text('Error: $e')));
-                  }
-                }
-              },
-              child: const Text('Update'),
-            ),
-          ],
-        );
-      },
-    );
-
-    editName.dispose();
-    editReg.dispose();
-    editDept.dispose();
-    editEmail.dispose();
   }
 
   @override
   void dispose() {
-    nameController.dispose();
-    regController.dispose();
-    deptController.dispose();
-    emailController.dispose();
+    searchController.dispose();
     super.dispose();
   }
 
-  // Application UI
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF3F5FA),
       appBar: AppBar(
-        title: const Text('Student Management System'),
+        title: const Text(
+          'Student Information',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
       ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.school, size: 65, color: Colors.indigo),
+                const SizedBox(height: 12),
 
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Add Student Details',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
+                const Text(
+                  'Search Student Records',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
 
-            const SizedBox(height: 20),
+                const SizedBox(height: 8),
 
-            // Student Name
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Student Name',
-                prefixIcon: Icon(Icons.person),
-                border: OutlineInputBorder(),
-              ),
-            ),
+                const Text(
+                  'Find student details using name or register number.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.black54),
+                ),
 
-            const SizedBox(height: 12),
+                const SizedBox(height: 25),
 
-            // Register Number
-            TextField(
-              controller: regController,
-              decoration: const InputDecoration(
-                labelText: 'Register Number',
-                prefixIcon: Icon(Icons.numbers),
-                border: OutlineInputBorder(),
-              ),
-            ),
+                TextField(
+                  controller: searchController,
+                  onSubmitted: (_) => searchStudents(),
+                  decoration: InputDecoration(
+                    hintText: 'Enter name or register number',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
 
-            const SizedBox(height: 12),
+                const SizedBox(height: 15),
 
-            // Department
-            TextField(
-              controller: deptController,
-              decoration: const InputDecoration(
-                labelText: 'Department',
-                prefixIcon: Icon(Icons.school),
-                border: OutlineInputBorder(),
-              ),
-            ),
+                ElevatedButton.icon(
+                  onPressed: isLoading ? null : searchStudents,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search Student'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.all(15),
+                  ),
+                ),
 
-            const SizedBox(height: 12),
+                const SizedBox(height: 25),
 
-            // Email
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email Address',
-                prefixIcon: Icon(Icons.email),
-                border: OutlineInputBorder(),
-              ),
-            ),
+                if (isLoading) const Center(child: CircularProgressIndicator()),
 
-            const SizedBox(height: 18),
+                if (errorMessage.isNotEmpty)
+                  Text(
+                    errorMessage,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
 
-            // Add Button
-            ElevatedButton.icon(
-              onPressed: addStudent,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Student'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.all(15),
-              ),
-            ),
+                if (!isLoading &&
+                    searched &&
+                    students.isEmpty &&
+                    errorMessage.isEmpty)
+                  const Text(
+                    'No student records found.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, color: Colors.red),
+                  ),
 
-            const SizedBox(height: 35),
+                if (!isLoading && students.isNotEmpty)
+                  Text(
+                    '${students.length} student record(s) found',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
 
-            const Text(
-              'Saved Student Records',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
+                const SizedBox(height: 12),
 
-            const SizedBox(height: 15),
+                ...students.map((student) {
+                  return Card(
+                    color: Colors.white,
+                    elevation: 3,
+                    margin: const EdgeInsets.only(bottom: 15),
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.account_circle,
+                            size: 45,
+                            color: Colors.indigo,
+                          ),
+                          const SizedBox(height: 10),
 
-            // Retrieve Students from Firestore
-            StreamBuilder<QuerySnapshot>(
-              stream: students.snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Error: ${snapshot.error}');
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final records = snapshot.data!.docs;
-
-                if (records.isEmpty) {
-                  return const Center(child: Text('No student records found'));
-                }
-
-                return ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: records.length,
-                  itemBuilder: (context, index) {
-                    final doc = records[index];
-
-                    final data = doc.data() as Map<String, dynamic>;
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.indigo,
-                          foregroundColor: Colors.white,
-                          child: Icon(Icons.person),
-                        ),
-
-                        title: Text(
-                          data['name'] ?? '',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-
-                        subtitle: Text(
-                          'Register No: ${data['registerNumber'] ?? ''}\n'
-                          'Department: ${data['department'] ?? ''}\n'
-                          'Email: ${data['email'] ?? ''}',
-                        ),
-
-                        isThreeLine: true,
-
-                        // Edit and Delete Menu
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              editStudent(doc.id, data);
-                            } else if (value == 'delete') {
-                              deleteStudent(doc.id);
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'edit',
-                              child: Text('Edit'),
+                          Text(
+                            student['name'] ?? 'N/A',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
                             ),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Text('Delete'),
-                            ),
-                          ],
-                        ),
+                          ),
+
+                          const Divider(),
+
+                          Text(
+                            'Register Number: ${student['registerNumber'] ?? 'N/A'}',
+                          ),
+                          const SizedBox(height: 8),
+
+                          Text('Department: ${student['department'] ?? 'N/A'}'),
+                          const SizedBox(height: 8),
+
+                          Text('Email: ${student['email'] ?? 'N/A'}'),
+                        ],
                       ),
-                    );
-                  },
-                );
-              },
+                    ),
+                  );
+                }),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
